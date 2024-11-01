@@ -138,8 +138,9 @@ class CommandPanel:
         self.spacing = 10
         self.direction_buttons = self.create_direction_buttons()
         self.color_buttons = self.create_color_buttons()
-        self.play_button = pygame.Rect(WINDOW_WIDTH - 60, 
-                                     self.y_position + 10, 40, 40)
+        # self.play_button = pygame.Rect(WINDOW_WIDTH - 60, 
+        #                              self.y_position + 10, 40, 40)
+        self.play_button = pygame.image.load("play.png")
 
     def create_direction_buttons(self):
         buttons = {}

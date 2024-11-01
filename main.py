@@ -3,7 +3,6 @@ import sys
 import random
 from enum import Enum
 from dataclasses import dataclass
-import time
 
 # Initialize Pygame
 pygame.init()
@@ -11,9 +10,9 @@ pygame.init()
 # Constants
 CELL_SIZE = 60
 GRID_SIZE = 6
-BUTTON_HEIGHT = 80
+COMMAND_PANEL_HEIGHT = 120
 WINDOW_WIDTH = CELL_SIZE * GRID_SIZE
-WINDOW_HEIGHT = CELL_SIZE * GRID_SIZE + BUTTON_HEIGHT
+WINDOW_HEIGHT = CELL_SIZE * GRID_SIZE + COMMAND_PANEL_HEIGHT
 SCREEN = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
 pygame.display.set_caption("Toddler Programming Game")
 
@@ -27,91 +26,59 @@ YELLOW = (255, 255, 0)
 PURPLE = (128, 0, 128)
 ORANGE = (255, 165, 0)
 
-class Direction(Enum):
-    UP = "⬆️"
-    DOWN = "⬇️"
-    LEFT = "⬅️"
-    RIGHT = "➡️"
-
 @dataclass
 class Command:
-    direction: Direction
+    direction: str
     color: tuple
 
-class Path:
-    def __init__(self):
-        self.start_pos = [0, 0]
-        self.goal_pos = [0, 0]
-        self.path_cells = []
-        self.obstacles = []
+class Direction(Enum):
+    UP = "up"
+    DOWN = "down"
+    LEFT = "left"
+    RIGHT = "right"
 
-    @staticmethod
-    def generate_random_path():
-        path = Path()
-        path.start_pos = [0, random.randint(0, GRID_SIZE-1)]
-        current_pos = path.start_pos.copy()
-        path.path_cells = [current_pos.copy()]
-        
-        # Generate random path
-        steps = random.randint(4, 8)
-        for _ in range(steps):
-            possible_moves = []
-            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                new_x = current_pos[0] + dx
-                new_y = current_pos[1] + dy
-                if (0 <= new_x < GRID_SIZE and 0 <= new_y < GRID_SIZE and 
-                    [new_x, new_y] not in path.path_cells):
-                    possible_moves.append((dx, dy))
-            
-            if not possible_moves:
-                break
-                
-            dx, dy = random.choice(possible_moves)
-            current_pos[0] += dx
-            current_pos[1] += dy
-            path.path_cells.append(current_pos.copy())
-        
-        path.goal_pos = current_pos.copy()
-        
-        # Generate obstacles
-        path.obstacles = []
-        for _ in range(random.randint(3, 5)):
-            while True:
-                obs = [random.randint(0, GRID_SIZE-1), random.randint(0, GRID_SIZE-1)]
-                if obs not in path.path_cells and obs not in path.obstacles:
-                    path.obstacles.append(obs)
-                    break
-                    
-        return path
+class ButtonImage:
+    def __init__(self, image_path, size=(50, 50)):
+        # Load and scale the image
+        self.original_image = pygame.image.load(image_path)
+        self.image = pygame.transform.scale(self.original_image, size)
+        self.rect = self.image.get_rect()
 
+    def set_position(self, x, y):
+        self.rect.x = x
+        self.rect.y = y
 class GameState:
     def __init__(self):
-        self.paths = [Path.generate_random_path() for _ in range(5)]
+        self.paths = self.generate_paths()
         self.current_path_index = 0
-        self.player_pos = None
+        self.current_path = self.paths[self.current_path_index]
+        self.player_pos = self.current_path.start_pos.copy()
         self.commands = []
         self.current_command = 0
         self.is_playing = False
         self.game_won = False
         self.game_lost = False
-        self.reset_current_path()
+        self.animation_timer = 0
+        self.available_colors = [RED, BLUE, GREEN, YELLOW, PURPLE, ORANGE]
 
-    def reset_current_path(self):
-        self.player_pos = self.paths[self.current_path_index].start_pos.copy()
-        self.commands = []
-        self.current_command = 0
-        self.is_playing = False
-        self.game_won = False
-        self.game_lost = False
+    def generate_paths(self):
+        return [Path() for _ in range(5)]
 
     def next_path(self):
         self.current_path_index = (self.current_path_index + 1) % len(self.paths)
-        self.reset_current_path()
+        self.current_path = self.paths[self.current_path_index]
+        self.reset()
+    def reset(self):
+        self.player_pos = self.current_path.start_pos.copy()
+        self.commands = []
+        self.current_command = 0
+        self.is_playing = False
+        self.game_won = False
+        self.game_lost = False
+        self.animation_timer = 0
 
     def add_command(self, direction, color):
-        if not self.is_playing:
-            self.commands.append(Command(direction, color))
-
+        self.commands.append(Command(direction, color))
     def execute_next_command(self):
         if self.current_command >= len(self.commands):
             self.is_playing = False
@@ -119,7 +86,7 @@ class GameState:
 
         command = self.commands[self.current_command]
         new_pos = self.player_pos.copy()
-        
+
         if command.direction == Direction.UP:
             new_pos[1] -= 1
         elif command.direction == Direction.DOWN:
@@ -129,15 +96,17 @@ class GameState:
         elif command.direction == Direction.RIGHT:
             new_pos[0] += 1
 
+        # Check if move is valid
         if (0 <= new_pos[0] < GRID_SIZE and 
             0 <= new_pos[1] < GRID_SIZE and 
-            new_pos not in self.paths[self.current_path_index].obstacles):
+            new_pos not in self.current_path.obstacles):
             self.player_pos = new_pos
             
-            if self.player_pos == self.paths[self.current_path_index].goal_pos:
+            # Check win/lose conditions
+            if self.player_pos == self.current_path.goal_pos:
                 self.game_won = True
                 self.is_playing = False
-            elif self.player_pos not in self.paths[self.current_path_index].path_cells:
+            elif self.player_pos in self.current_path.obstacles:
                 self.game_lost = True
                 self.is_playing = False
         else:
@@ -145,33 +114,62 @@ class GameState:
             self.is_playing = False
 
         self.current_command += 1
+class Path:
+    def __init__(self):
+        self.start_pos = [0, 0]
+        self.goal_pos = None
+        self.obstacles = []
+        self.generate_path()
 
-class Button:
-    def __init__(self, x, y, width, height, color, text="", icon=""):
-        self.rect = pygame.Rect(x, y, width, height)
-        self.color = color
-        self.text = text
-        self.icon = icon
-        self.font = pygame.font.Font(None, 36)
-
-    def draw(self, screen):
-        pygame.draw.rect(screen, self.color, self.rect)
-        pygame.draw.rect(screen, BLACK, self.rect, 2)
+    def generate_path(self):
+        # Generate a random goal position
+        self.goal_pos = [random.randint(3, GRID_SIZE-1), random.randint(3, GRID_SIZE-1)]
         
-        if self.text:
-            text_surface = self.font.render(self.text, True, BLACK)
-            text_rect = text_surface.get_rect(center=self.rect.center)
-            screen.blit(text_surface, text_rect)
+        # Generate obstacles avoiding the path
+        self.obstacles = []
+        possible_positions = [(x, y) for x in range(GRID_SIZE) for y in range(GRID_SIZE)]
+        possible_positions.remove((self.start_pos[0], self.start_pos[1]))
+        possible_positions.remove((self.goal_pos[0], self.goal_pos[1]))
         
-        if self.icon:
-            icon_surface = self.font.render(self.icon, True, BLACK)
-            icon_rect = icon_surface.get_rect(center=self.rect.center)
-            screen.blit(icon_surface, icon_rect)
+        for _ in range(random.randint(3, 5)):
+            if possible_positions:
+                pos = random.choice(possible_positions)
+                self.obstacles.append([pos[0], pos[1]])
+                possible_positions.remove(pos)
 
-    def handle_click(self, pos):
-        return self.rect.collidepoint(pos)
+class CommandPanel:
+    def __init__(self, y_position):
+        self.y_position = y_position
+        self.button_size = 30
+        self.spacing = 10
+        
+        # Load direction button images
+        self.direction_buttons = {}
+        for direction in Direction:
+            image_path = f"./assets/{direction.value}.svg"  # e.g., "up.png", "down.png", etc.
+            button = ButtonImage(image_path, (self.button_size, self.button_size))
+            x_start = 10 + (len(self.direction_buttons) * (self.button_size + self.spacing))
+            button.set_position(x_start, y_position + 10)
+            self.direction_buttons[direction] = button
 
-def draw_game(screen, game_state):
+        # Load play button
+        self.play_button = ButtonImage("./assets/play.png", (40, 40))
+        self.play_button.set_position(WINDOW_WIDTH - 60, y_position + 10)
+
+        # Create color buttons (these remain as rectangles)
+        self.color_buttons = self.create_color_buttons()
+
+    def create_color_buttons(self):
+        buttons = []
+        x_start = 10
+        y = self.y_position + self.button_size + 20
+        for color in [RED, BLUE, GREEN, YELLOW, PURPLE, ORANGE]:
+            buttons.append((pygame.Rect(x_start, y, 
+                                     self.button_size, self.button_size), color))
+            x_start += self.button_size + self.spacing
+        return buttons
+
+def draw_game(screen, game_state, command_panel):
     screen.fill(WHITE)
     
     # Draw grid
@@ -180,65 +178,54 @@ def draw_game(screen, game_state):
             pygame.draw.rect(screen, BLACK, 
                            (x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE), 1)
 
-    current_path = game_state.paths[game_state.current_path_index]
-
-    # Draw path (slightly visible)
-    for cell in current_path.path_cells:
-        pygame.draw.rect(screen, (*YELLOW, 128),
-                        (cell[0] * CELL_SIZE, cell[1] * CELL_SIZE, 
-                         CELL_SIZE, CELL_SIZE))
-
     # Draw obstacles
-    for obstacle in current_path.obstacles:
+    for obstacle in game_state.current_path.obstacles:
         pygame.draw.rect(screen, RED,
                         (obstacle[0] * CELL_SIZE, obstacle[1] * CELL_SIZE, 
                          CELL_SIZE, CELL_SIZE))
 
     # Draw goal
     pygame.draw.rect(screen, GREEN,
-                    (current_path.goal_pos[0] * CELL_SIZE, 
-                     current_path.goal_pos[1] * CELL_SIZE,
+                    (game_state.current_path.goal_pos[0] * CELL_SIZE, 
+                     game_state.current_path.goal_pos[1] * CELL_SIZE,
                      CELL_SIZE, CELL_SIZE))
 
     # Draw player
-    if game_state.player_pos:
-        pygame.draw.circle(screen, BLUE,
-                          (game_state.player_pos[0] * CELL_SIZE + CELL_SIZE//2,
-                           game_state.player_pos[1] * CELL_SIZE + CELL_SIZE//2),
-                          CELL_SIZE//3)
+    pygame.draw.circle(screen, BLUE,
+                      (game_state.player_pos[0] * CELL_SIZE + CELL_SIZE//2,
+                       game_state.player_pos[1] * CELL_SIZE + CELL_SIZE//2),
+                      CELL_SIZE//3)
+
+    # Draw direction buttons (images)
+    for button in command_panel.direction_buttons.values():
+        screen.blit(button.image, button.rect)
+
+    # Draw play button (image)
+    screen.blit(command_panel.play_button.image, command_panel.play_button.rect)
+
+    # Draw color buttons
+    for button, color in command_panel.color_buttons:
+        pygame.draw.rect(screen, color, button)
+        pygame.draw.rect(screen, BLACK, button, 2)
+
+    # Draw command sequence
+    x_start = 10
+    y = WINDOW_HEIGHT - 40
+    for command in game_state.commands:
+        pygame.draw.circle(screen, command.color, (x_start + 15, y), 15)
+        # Load and draw the corresponding direction image for the command
+        direction_img = command_panel.direction_buttons[command.direction].image
+        small_direction_img = pygame.transform.scale(direction_img, (30, 30))
+        screen.blit(small_direction_img, (x_start, y - 15))
+        x_start += 40
 
 def main():
     game_state = GameState()
+    command_panel = CommandPanel(GRID_SIZE * CELL_SIZE)
     clock = pygame.time.Clock()
-    font = pygame.font.Font(None, 36)
-
-    # Create buttons
-    button_width = 50
-    button_spacing = 10
-    button_y = WINDOW_HEIGHT - BUTTON_HEIGHT + 10
+    selected_color = BLUE
     
-    direction_buttons = [
-        Button(10, button_y, button_width, button_width, WHITE, icon="⬆️"),
-        Button(10 + button_width + button_spacing, button_y, button_width, button_width, WHITE, icon="⬇️"),
-        Button(10 + (button_width + button_spacing) * 2, button_y, button_width, button_width, WHITE, icon="⬅️"),
-        Button(10 + (button_width + button_spacing) * 3, button_y, button_width, button_width, WHITE, icon="➡️"),
-    ]
-    
-    color_buttons = [
-        Button(10 + (button_width + button_spacing) * 4, button_y, button_width, button_width, RED),
-        Button(10 + (button_width + button_spacing) * 5, button_y, button_width, button_width, BLUE),
-        Button(10 + (button_width + button_spacing) * 6, button_y, button_width, button_width, GREEN),
-    ]
-    
-    play_button = Button(10 + (button_width + button_spacing) * 7, button_y, button_width, button_width, WHITE, icon="▶️")
-    reset_button = Button(10 + (button_width + button_spacing) * 8, button_y, button_width, button_width, WHITE, icon="🔄")
-
-    last_move_time = 0
-    move_delay = 500  # milliseconds
-
     while True:
-        current_time = pygame.time.get_ticks()
-        
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
@@ -247,52 +234,43 @@ def main():
             if event.type == pygame.MOUSEBUTTONDOWN and not game_state.is_playing:
                 mouse_pos = pygame.mouse.get_pos()
                 
-                # Handle direction buttons
-                for i, button in enumerate(direction_buttons):
-                    if button.handle_click(mouse_pos):
-                        direction = list(Direction)[i]
-                        game_state.add_command(direction, BLUE)  # Default color
+                # Check direction buttons
+                for direction, button in command_panel.direction_buttons.items():
+                    if button.rect.collidepoint(mouse_pos):
+                        game_state.add_command(direction, selected_color)
 
-                # Handle color buttons
-                for button in color_buttons:
-                    if button.handle_click(mouse_pos):
-                        if game_state.commands:
-                            game_state.commands[-1].color = button.color
+                # Check color buttons
+                for button, color in command_panel.color_buttons:
+                    if button.collidepoint(mouse_pos):
+                        selected_color = color
 
-                # Handle play button
-                if play_button.handle_click(mouse_pos):
+                # Check play button
+                if command_panel.play_button.rect.collidepoint(mouse_pos):
                     game_state.is_playing = True
-                    game_state.current_command = 0
 
-                # Handle reset button
-                if reset_button.handle_click(mouse_pos):
-                    game_state.reset_current_path()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:  # Reset game
+                    game_state.reset()
+                elif event.key == pygame.K_n:  # Next path
+                    game_state.next_path()
 
-        # Execute commands with delay
-        if game_state.is_playing and current_time - last_move_time >= move_delay:
-            game_state.execute_next_command()
-            last_move_time = current_time
+        # Update game state
+        if game_state.is_playing:
+            game_state.animation_timer += 1
+            if game_state.animation_timer >= 30:
+                game_state.execute_next_command()
+                game_state.animation_timer = 0
 
         # Draw game state
-        draw_game(SCREEN, game_state)
-
-        # Draw buttons
-        for button in direction_buttons + color_buttons + [play_button, reset_button]:
-            button.draw(SCREEN)
-
-        # Draw command sequence
-        command_y = WINDOW_HEIGHT - BUTTON_HEIGHT//2
-        for i, command in enumerate(game_state.commands):
-            pygame.draw.circle(SCREEN, command.color,
-                            (10 + i * 25, command_y),
-                            10)
+        draw_game(SCREEN, game_state, command_panel)
 
         # Display win/lose messages
-        if game_state.game_won:
-            text = font.render("You Win! 🌟", True, GREEN)
-            SCREEN.blit(text, (WINDOW_WIDTH//4, WINDOW_HEIGHT//2))
-        elif game_state.game_lost:
-            text = font.render("Try Again! \U0001f600", True, RED)
+        if game_state.game_won or game_state.game_lost:
+            font = pygame.font.Font(None, 36)
+            if game_state.game_won:
+                text = font.render("You Win! 🌟", True, GREEN)
+            else:
+                text = font.render("Try Again! 🔄", True, RED)
             SCREEN.blit(text, (WINDOW_WIDTH//4, WINDOW_HEIGHT//2))
 
         pygame.display.flip()
